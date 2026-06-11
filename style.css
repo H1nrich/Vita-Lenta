@@ -1,0 +1,242 @@
+/* =========================================================
+   1. PALETTE E VARIABILI GLOBALI
+   ========================================================= */
+:root {
+  --bg-start: #071029;
+  --bg-end:   #0b1220;
+
+  --card-bg: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  --card-contrast: rgba(255,255,255,0.03);
+
+  --muted: #9aa4c0;
+  --accent: #6C8EAD;
+  --accent-2: #8FB7D6;
+
+  --success: #7FB77E;
+  --danger:  #FF7B7B;
+
+  --radius: 12px;
+}
+
+/* =========================================================
+   2. BASE LAYOUT
+   ========================================================= */
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  background: linear-gradient(180deg, var(--bg-start), var(--bg-end));
+  color: #e6eef8;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.container {
+  max-width: 1100px;
+  margin: 28px auto;
+  padding: 20px;
+  display: grid;
+  grid-template-columns: 1fr 420px;
+  gap: 20px;
+}
+
+/* Card generiche */
+.form-area,
+.results-area {
+  padding: 16px;
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  border: 1px solid var(--card-contrast);
+}
+
+.results-area { overflow-y: auto; max-height: 80vh; }
+
+/* =========================================================
+   3. BOTTONI
+   ========================================================= */
+.controls { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+.btn { padding: 8px 12px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+
+.btn.primary {
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  color: #fff;
+  border: none;
+  box-shadow: 0 8px 24px rgba(79,120,150,0.14);
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+
+.btn.primary:active {
+  transform: translateY(1px);
+}
+
+.btn.ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid rgba(255,255,255,0.04);
+}
+
+/* =========================================================
+   4. DOMANDE
+   ========================================================= */
+.questions { display: flex; flex-direction: column; gap: 10px; }
+
+/* FIX: bordo e sfondo aggiunti (erano presenti solo inline) */
+.question {
+  padding: 12px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-contrast);
+}
+
+.qtitle { font-weight: 700; font-size: 14px; color: #eaf2ff; }
+
+/* =========================================================
+   5. OPZIONI (RADIO)
+   ========================================================= */
+.options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  position: relative;
+  z-index: 0;
+}
+
+.option {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  background: transparent;
+  transition: background .12s ease, transform .08s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Evita che i figli blocchino il click */
+.option * { pointer-events: none; }
+.option input,
+.option .dot,
+.option .opt-text { pointer-events: auto; }
+
+/* Input invisibile ma attivo */
+.option input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+}
+
+/* Dot colorato */
+.option .dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: 0 0 12px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+}
+
+/* Testo opzione */
+.option .opt-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e6eef8;
+}
+
+.option:hover {
+  background: rgba(143,183,214,0.03);
+  transform: translateY(-2px);
+}
+
+/* Opzioni disabilitate (auto-voto) */
+.option.disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* =========================================================
+   6. STATO SELEZIONATO
+   ========================================================= */
+.option input:checked + .dot {
+  transform: scale(1.08);
+  border: 2px solid rgba(255,255,255,0.04);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.45),
+              0 0 0 6px rgba(143,183,214,0.06);
+}
+
+.option input:checked + .dot + .opt-text,
+.option.selected .opt-text {
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.option.selected {
+  background: rgba(143,183,214,0.06);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.28);
+  transform: translateY(-3px);
+}
+
+/* =========================================================
+   7. DOMANDE MANCANTI
+   ========================================================= */
+.question.missing {
+  border-color: rgba(255,123,123,0.28) !important;
+  box-shadow: 0 6px 18px rgba(255,123,123,0.06);
+  background: linear-gradient(180deg, rgba(255,123,123,0.02), transparent) !important;
+}
+
+/* =========================================================
+   8. RISULTATI E GRAFICI
+   ========================================================= */
+.result-card {
+  padding: 12px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-contrast);
+}
+
+.result-card h4 {
+  margin: 0 0 8px 0;
+  font-size: 15px;
+  color: #eaf2ff;
+}
+
+/* Legenda */
+.legend { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.legend-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  color: #e6eef8;
+}
+.legend-item .dot { width: 10px; height: 10px; border-radius: 50%; box-shadow: none; }
+
+/* =========================================================
+   9. ACCESSIBILITÀ
+   ========================================================= */
+@media (prefers-reduced-motion: reduce) {
+  .option,
+  .btn {
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
+/* =========================================================
+   10. UTILITY
+   ========================================================= */
+.hidden {
+  display: none !important;
+}
