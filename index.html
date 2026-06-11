@@ -192,7 +192,7 @@
   /* =========================================================
      CONFIGURAZIONE
      ========================================================= */
-  const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyizCFVugYnqH_dbEPytdHBXUbrXJ8rWRo7z2rYXz5GVRaqwNoesVSCYidTfnZEvNX2/exec';
+  const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbx_MCTLlktnqHQldMulAc7mL9Dc3zERxR-AOAJVmig/exec';
   const REFRESH_INTERVAL_MS = 60000; // 1 minuto
   const LS_KEY = 'sondaggio_voted'; // chiave localStorage
 
@@ -377,7 +377,15 @@
     });
   }
 
-  document.getElementById('voterSelect').addEventListener('change', updateVoterUI);
+  // Promessa che si risolve quando il primo fetch dal server è completato.
+  // Finché non è pronta, il cambio nome nel dropdown aspetta prima di aggiornare l'UI.
+  let _initialFetchResolve;
+  const initialFetchDone = new Promise(resolve => { _initialFetchResolve = resolve; });
+
+  document.getElementById('voterSelect').addEventListener('change', async () => {
+    await initialFetchDone; // aspetta che votedSet sia popolato dal server
+    updateVoterUI();
+  });
 
   /* =========================================================
      SUBMIT VOTO
@@ -596,31 +604,29 @@
      FETCH DAL SERVER (risultati + lista votanti)
      ========================================================= */
   let _fetchInProgress = false;
+  let _initialFetchDone = false;
 
   async function fetchResults(forceRefresh = false) {
     if (_fetchInProgress && !forceRefresh) return;
     _fetchInProgress = true;
     try {
-      const ts = Date.now();
+      const url = WEB_APP_URL + '?action=all&_=' + Date.now();
+      const res  = await fetch(url, { cache: 'no-store' });
+      const data = await res.json();
 
-      // Fetch parallelo: risultati + lista votanti
-      const [resResults, resVoted] = await Promise.all([
-        fetch(WEB_APP_URL + '?action=results&_=' + ts, { cache: 'no-store' }),
-        fetch(WEB_APP_URL + '?action=voted&_='   + ts, { cache: 'no-store' })
-      ]);
-
-      const dataResults = await resResults.json();
-      const dataVoted   = await resVoted.json();
-
-      // Aggiorna localStorage con la fonte di verità dello Sheet
-      if (dataVoted.ok && Array.isArray(dataVoted.voted)) {
-        syncVoted(dataVoted.voted);
-        renderVotersStatus(dataVoted.voted);
-        // Aggiorna UI se il voter selezionato è nella lista
-        updateVoterUI();
+      if (data.ok && Array.isArray(data.voted)) {
+        syncVoted(data.voted);           // aggiorna votedSet con dati reali dal server
+        if (!_initialFetchDone) {
+          _initialFetchDone = true;
+          _initialFetchResolve();        // sblocca il listener sul dropdown
+        }
+        renderVotersStatus(data.voted);
+        updateVoterUI();                 // aggiorna banner/form con dati freschi
       }
 
-      renderResults(dataResults);
+      if (data.results) {
+        renderResults(data.results);
+      }
 
     } catch(e) {
       console.error('fetchResults error:', e);
