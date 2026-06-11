@@ -29,20 +29,19 @@ function jsonResponse(obj) {
 
 /**
  * Restituisce la lista dei voter che hanno già votato.
- * Legge solo la colonna B (voter) invece dell'intero foglio.
  */
 function getVotersWhoVoted() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet || sheet.getLastRow() <= 1) return [];
 
-  const lastRow = sheet.getLastRow();
-  // Legge solo colonna B (colonna 2), dalla riga 2 in poi
-  const values = sheet.getRange(2, 2, lastRow - 1, 1).getValues();
+  const data = sheet.getDataRange().getValues();
+  const rows = data.slice(1); // salta header
+  const voterCol = 1;         // colonna "voter" (indice 1)
 
   const voted = new Set();
-  values.forEach(r => {
-    const v = (r[0] || '').toString().trim();
+  rows.forEach(r => {
+    const v = (r[voterCol] || '').toString().trim();
     if (v) voted.add(v);
   });
 
