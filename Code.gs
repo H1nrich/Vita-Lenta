@@ -29,19 +29,20 @@ function jsonResponse(obj) {
 
 /**
  * Restituisce la lista dei voter che hanno già votato.
+ * Legge solo la colonna B (voter) invece dell'intero foglio.
  */
 function getVotersWhoVoted() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet || sheet.getLastRow() <= 1) return [];
 
-  const data = sheet.getDataRange().getValues();
-  const rows = data.slice(1); // salta header
-  const voterCol = 1;         // colonna "voter" (indice 1)
+  const lastRow = sheet.getLastRow();
+  // Legge solo colonna B (colonna 2), dalla riga 2 in poi
+  const values = sheet.getRange(2, 2, lastRow - 1, 1).getValues();
 
   const voted = new Set();
-  rows.forEach(r => {
-    const v = (r[voterCol] || '').toString().trim();
+  values.forEach(r => {
+    const v = (r[0] || '').toString().trim();
     if (v) voted.add(v);
   });
 
@@ -170,6 +171,84 @@ function resetVoti() {
   // Cancella tutte le righe dati (dalla 2 in poi), mantiene l'header
   sheet.deleteRows(2, lastRow - 1);
   Logger.log('Reset completato: cancellate ' + (lastRow - 1) + ' righe.');
+}
+
+
+/**
+ * ============================
+ *  FORZA "GIÀ VOTATO" (manuale)
+ *  → Esegui dal menu Fogli oppure
+ *    seleziona la funzione nell'editor e clicca ▶ Esegui
+ * ============================
+ */
+
+/**
+ * Aggiunge una voce nel menu Fogli quando il documento è aperto.
+ */
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('🗳️ Sondaggio')
+    .addItem('Forza "già votato"…', 'menuForzaVotato')
+    .addToUi();
+}
+
+/**
+ * Mostra un prompt con l'elenco di chi non ha ancora votato
+ * e segna la scelta come già votata (riga vuota).
+ */
+function menuForzaVotato() {
+  const giàVotati = getVotersWhoVoted().map(v => v.toLowerCase());
+  const nonAncoraVotati = AUTHORIZED.filter(n => !giàVotati.includes(n.toLowerCase()));
+
+  if (nonAncoraVotati.length === 0) {
+    SpreadsheetApp.getUi().alert('Tutti hanno già votato!');
+    return;
+  }
+
+  const lista = nonAncoraVotati.map((n, i) => `${i + 1}. ${n}`).join('\n');
+  const ui = SpreadsheetApp.getUi();
+
+  const risposta = ui.prompt(
+    'Forza "già votato"',
+    'Chi vuoi segnare come già votato?\n\n' + lista + '\n\nScrivi il numero o il nome esatto:',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (risposta.getSelectedButton() !== ui.Button.OK) return;
+
+  const input = risposta.getResponseText().trim();
+  let nomeScelto = null;
+
+  const num = parseInt(input, 10);
+  if (!isNaN(num) && num >= 1 && num <= nonAncoraVotati.length) {
+    nomeScelto = nonAncoraVotati[num - 1];
+  } else {
+    nomeScelto = nonAncoraVotati.find(n => n.toLowerCase() === input.toLowerCase()) || null;
+  }
+
+  if (!nomeScelto) {
+    ui.alert('Nome non trovato. Riprova.');
+    return;
+  }
+
+  _inserisciRigaVotato(nomeScelto);
+  ui.alert('✅ "' + nomeScelto + '" è stato segnato come già votato.');
+}
+
+/**
+ * Inserisce una riga con timestamp + voter e tutte le domande vuote.
+ * I valori vuoti vengono ignorati dal calcolo dei risultati.
+ */
+function _inserisciRigaVotato(nome) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet) sheet = ss.insertSheet(SHEET_NAME);
+
+  const lastCol = sheet.getLastColumn();
+  const qCount = Math.max(lastCol - 2, 0);
+
+  const riga = [new Date(), nome, ...Array(qCount).fill('')];
+  sheet.appendRow(riga);
 }
 
 
