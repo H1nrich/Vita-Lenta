@@ -193,7 +193,7 @@
      CONFIGURAZIONE
      ========================================================= */
   const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyizCFVugYnqH_dbEPytdHBXUbrXJ8rWRo7z2rYXz5GVRaqwNoesVSCYidTfnZEvNX2/exec';
-  const REFRESH_INTERVAL_MS = 10000;
+  const REFRESH_INTERVAL_MS = 60000; // 1 minuto
   const LS_KEY = 'sondaggio_voted'; // chiave localStorage
 
   const people = [
@@ -245,34 +245,37 @@
      Cache veloce: localStorage
      ========================================================= */
 
-  // Legge i voter già votati dal localStorage (Set)
-  function getLocalVoted() {
-    try {
-      const raw = localStorage.getItem(LS_KEY);
-      return raw ? new Set(JSON.parse(raw)) : new Set();
-    } catch { return new Set(); }
-  }
+  // Set in-memory: fonte primaria, sempre aggiornato dal server.
+  // Il localStorage e' solo un backup per il proprio nome tra sessioni.
+  const votedSet = new Set();
 
-  // Salva un voter nel localStorage
-  function markLocalVoted(voter) {
+  // All'avvio carica dal localStorage i nomi gia' votati in sessioni precedenti
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) JSON.parse(raw).forEach(v => votedSet.add(v.toLowerCase()));
+  } catch {}
+
+  // Segna un voter come votato (in-memory + localStorage)
+  function markVoted(voter) {
+    votedSet.add(voter.toLowerCase());
     try {
-      const s = getLocalVoted();
-      s.add(voter);
-      localStorage.setItem(LS_KEY, JSON.stringify(Array.from(s)));
+      localStorage.setItem(LS_KEY, JSON.stringify(Array.from(votedSet)));
     } catch {}
   }
 
-  // Sovrascrive il localStorage con la lista autorevole dello Sheet
-  function syncLocalVoted(votedArray) {
+  // Sovrascrive il Set in-memory con la lista autorevole dal server
+  function syncVoted(votedArray) {
+    votedSet.clear();
+    votedArray.forEach(v => votedSet.add(v.toLowerCase()));
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify(votedArray));
+      localStorage.setItem(LS_KEY, JSON.stringify(Array.from(votedSet)));
     } catch {}
   }
 
-  // Controlla se il voter selezionato ha già votato (prima localStorage, poi Sheet)
+  // Controlla se un voter ha gia' votato
   function isVoterAlreadyVoted(voter) {
     if (!voter) return false;
-    return getLocalVoted().has(voter);
+    return votedSet.has(voter.toLowerCase());
   }
 
   /* =========================================================
@@ -430,8 +433,8 @@
       const j = await res.json();
 
       if (j.ok) {
-        // Segna subito nel localStorage
-        markLocalVoted(voter);
+        // Segna subito in memoria e localStorage
+        markVoted(voter);
 
         alert('Voto registrato! Grazie 🎉');
         clearForm();
@@ -441,7 +444,7 @@
       } else {
         // Se il server dice "hai già votato" aggiorniamo anche il localStorage
         if (j.error && j.error.toLowerCase().includes('già votato')) {
-          markLocalVoted(voter);
+          markVoted(voter);
           updateVoterUI();
         }
         alert('Errore: ' + (j.error || 'risposta non valida'));
@@ -611,7 +614,7 @@
 
       // Aggiorna localStorage con la fonte di verità dello Sheet
       if (dataVoted.ok && Array.isArray(dataVoted.voted)) {
-        syncLocalVoted(dataVoted.voted);
+        syncVoted(dataVoted.voted);
         renderVotersStatus(dataVoted.voted);
         // Aggiorna UI se il voter selezionato è nella lista
         updateVoterUI();
