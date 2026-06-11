@@ -1,223 +1,670 @@
-/**
- * ============================
- *  CONFIGURAZIONE & COSTANTI
- * ============================
- */
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sondaggio</title>
 
-const SHEET_NAME = 'Voti';
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
-const AUTHORIZED = [
-  "Gaetano Orefice","Daniela Parascandolo","Aurora Orefice","Enrico Scolastico",
-  "Gianpiero Fasulo","Federica Devastato","Eleonora Galdi","Fabio Vassallo",
-  "Fabio Sivero","Luigi De Simone","Chiara Vassallo"
-];
+  <style>
+  :root {
+    --bg-start: #071029;
+    --bg-end:   #0b1220;
+    --card-bg: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    --card-contrast: rgba(255,255,255,0.03);
+    --muted: #9aa4c0;
+    --accent: #6C8EAD;
+    --accent-2: #8FB7D6;
+    --success: #7FB77E;
+    --danger:  #FF7B7B;
+    --radius: 12px;
+  }
 
-const DEFAULT_Q_COUNT = 28;
+  html, body {
+    height: 100%;
+    margin: 0;
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    background: linear-gradient(180deg, var(--bg-start), var(--bg-end));
+    color: #e6eef8;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 
+  .container {
+    max-width: 1100px;
+    margin: 28px auto;
+    padding: 20px;
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    gap: 20px;
+  }
 
-/**
- * ============================
- *  FUNZIONI DI UTILITÀ
- * ============================
- */
+  .form-area, .results-area {
+    padding: 16px;
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    border: 1px solid var(--card-contrast);
+  }
 
-function jsonResponse(obj) {
-  return ContentService
-    .createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
-}
+  .results-area { overflow-y: auto; max-height: 80vh; }
 
-/**
- * Restituisce la lista dei voter che hanno già votato.
- */
-function getVotersWhoVoted() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAME);
-  if (!sheet || sheet.getLastRow() <= 1) return [];
+  /* ── BOTTONI ── */
+  .controls { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .btn { padding: 8px 12px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; }
+  .btn.primary {
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    color: #fff; border: none;
+    box-shadow: 0 8px 24px rgba(79,120,150,0.14);
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .btn.primary:active { transform: translateY(1px); }
+  .btn.primary:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn.ghost {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
 
-  const data = sheet.getDataRange().getValues();
-  const rows = data.slice(1); // salta header
-  const voterCol = 1;         // colonna "voter" (indice 1)
+  /* ── BANNER GIÀ VOTATO ── */
+  .already-voted-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(127,183,126,0.12), rgba(127,183,126,0.06));
+    border: 1px solid rgba(127,183,126,0.3);
+    color: var(--success);
+    font-weight: 700;
+    font-size: 15px;
+    margin-bottom: 12px;
+  }
+  .already-voted-banner .icon { font-size: 20px; }
 
-  const voted = new Set();
-  rows.forEach(r => {
-    const v = (r[voterCol] || '').toString().trim();
-    if (v) voted.add(v);
+  /* ── DOMANDE ── */
+  .questions { display: flex; flex-direction: column; gap: 10px; }
+  .question {
+    padding: 12px; border-radius: 10px;
+    display: flex; flex-direction: column; gap: 8px;
+    background: var(--card-bg);
+    border: 1px solid var(--card-contrast);
+  }
+  .qtitle { font-weight: 700; font-size: 14px; color: #eaf2ff; }
+
+  /* ── OPZIONI ── */
+  .options { display: flex; flex-wrap: wrap; gap: 8px; }
+  .option {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; border-radius: 8px; cursor: pointer;
+    transition: background .12s ease, transform .08s ease;
+    background: transparent;
+  }
+  .option * { pointer-events: none; }
+  .option input, .option .dot, .option .opt-text { pointer-events: auto; }
+  .option input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; padding: 0; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; box-shadow: 0 2px 6px rgba(0,0,0,0.25); }
+  .opt-text { font-size: 13px; font-weight: 600; color: #e6eef8; }
+  .option:hover { background: rgba(143,183,214,0.03); transform: translateY(-2px); }
+  .option.selected { background: rgba(143,183,214,0.06); box-shadow: 0 8px 20px rgba(0,0,0,0.28); transform: translateY(-3px); }
+  .option.selected .opt-text { font-weight: 800; color: #fff; }
+  .option.disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+
+  /* ── DOMANDE MANCANTI ── */
+  .question.missing {
+    border-color: rgba(255,123,123,0.28) !important;
+    box-shadow: 0 6px 18px rgba(255,123,123,0.06);
+    background: linear-gradient(180deg, rgba(255,123,123,0.02), transparent) !important;
+  }
+
+  /* ── RISULTATI ── */
+  .result-card {
+    padding: 12px; margin-bottom: 12px; border-radius: 10px;
+    background: var(--card-bg);
+    border: 1px solid var(--card-contrast);
+  }
+  .result-card h4 { margin: 0 0 8px 0; font-size: 15px; color: #eaf2ff; }
+  .legend { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .legend-item { display: flex; gap: 8px; align-items: center; color: #e6eef8; font-size: 13px; }
+  .legend-item .dot { width: 10px; height: 10px; border-radius: 50%; box-shadow: none; }
+
+  /* ── STATO VOTANTI ── */
+  .voters-status {
+    margin-bottom: 14px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .voters-status strong { color: #e6eef8; }
+  .voter-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 99px;
+    font-size: 12px;
+    font-weight: 600;
+    margin: 2px 3px;
+  }
+  .voter-pill.voted {
+    background: rgba(127,183,126,0.15);
+    color: var(--success);
+    border: 1px solid rgba(127,183,126,0.25);
+  }
+  .voter-pill.pending {
+    background: rgba(154,164,192,0.08);
+    color: var(--muted);
+    border: 1px solid rgba(154,164,192,0.15);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .option, .btn { transition: none !important; transform: none !important; }
+  }
+  .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="form-area">
+      <div class="controls">
+        <select id="voterSelect" aria-label="Seleziona il tuo nome">
+          <option value="">Seleziona il tuo nome</option>
+        </select>
+        <button id="submitBtn" class="btn primary">Invia voto</button>
+        <button id="resetBtn" class="btn ghost">Reset form</button>
+      </div>
+
+      <div id="alreadyVotedBanner" class="already-voted-banner hidden">
+        <span class="icon">✅</span>
+        <span id="alreadyVotedMsg">Hai già votato. Grazie!</span>
+      </div>
+
+      <div id="questions" class="questions" aria-live="polite"></div>
+    </div>
+
+    <div class="results-area">
+      <h3 style="margin-top:0">Risultati</h3>
+
+      <div id="votersStatus" class="voters-status"></div>
+
+      <div id="results"></div>
+    </div>
+  </div>
+
+  <script>
+  /* =========================================================
+     CONFIGURAZIONE
+     ========================================================= */
+  const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyizCFVugYnqH_dbEPytdHBXUbrXJ8rWRo7z2rYXz5GVRaqwNoesVSCYidTfnZEvNX2/exec';
+  const REFRESH_INTERVAL_MS = 60000; // 1 minuto
+  const LS_KEY = 'sondaggio_voted'; // chiave localStorage
+
+  const people = [
+    "Gaetano Orefice","Daniela Parascandolo","Aurora Orefice","Enrico Scolastico",
+    "Gianpiero Fasulo","Federica Devastato","Eleonora Galdi","Fabio Vassallo",
+    "Fabio Sivero","Luigi De Simone","Chiara Vassallo"
+  ];
+
+  const questions = [
+    "Chi fa la miglior sciarpata?",
+    "Chi ha i gusti migliori col cibo?",
+    "Chi ha i gusti peggiori col cibo?",
+    "Chi è il più austico / riservato?",
+    "Chi è il miglior guidatore?",
+    "Chi è il peggior guidatore?",
+    "Chi è più schietto?",
+    "Chi è più ingenuo o poco sveglio?",
+    "Chi è più partecipe/componente del gruppo?",
+    "Chi mangia di più?",
+    "Chi mangia di meno?",
+    "Chi è più affidabile?",
+    "Chi è il meno affidabile?",
+    "A chi lascereste i vostri figli?",
+    "A chi non lascereste i vostri figli?",
+    "Chi chiamereste in una situazione di necessità che sicuramente risponderebbe?",
+    "Chi non provereste nemmeno a chiamare in una situazione di necessità?",
+    "A chi affidereste la vostra macchina?",
+    "Di chi vi fidate di più / chi vi ispira più fiducia?",
+    "Con chi vi sentite più sintonia (escludere partner e fratelli/sorelle)?",
+    "Con chi vorreste stringere di più il vostro rapporto di amicizia?",
+    "Con chi passereste le serate più pazze/esotiche?",
+    "Con chi fareste un viaggio?",
+    "Chi secondo voi ha il cognome più divertente?",
+    "Chi secondo voi ha il nome più bello?",
+    "Chi vincerebbe a una gara di canto?",
+    "Chi vincerebbe a una gara di Karaoke?",
+    "Chi vincerebbe a una gara di stand-up comedy?"
+  ];
+
+  const palette = ['#FF6B6B','#4ECDC4','#FFD93D','#5568FE','#FF8C42','#9B5DE5','#00C2A8','#FF6FD8','#8AC926','#00A6FB','#F72585'];
+  const colorMap = {};
+  people.forEach((p, i) => colorMap[p] = palette[i % palette.length]);
+
+  const charts = {};
+
+  /* =========================================================
+     GESTIONE "GIÀ VOTATO"
+     Source of truth: Sheet (via ?action=voted)
+     Cache veloce: localStorage
+     ========================================================= */
+
+  // Set in-memory: fonte primaria, sempre aggiornato dal server.
+  // Il localStorage e' solo un backup per il proprio nome tra sessioni.
+  const votedSet = new Set();
+
+  // All'avvio carica dal localStorage i nomi gia' votati in sessioni precedenti
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) JSON.parse(raw).forEach(v => votedSet.add(v.toLowerCase()));
+  } catch {}
+
+  // Segna un voter come votato (in-memory + localStorage)
+  function markVoted(voter) {
+    votedSet.add(voter.toLowerCase());
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(Array.from(votedSet)));
+    } catch {}
+  }
+
+  // Sovrascrive il Set in-memory con la lista autorevole dal server
+  function syncVoted(votedArray) {
+    votedSet.clear();
+    votedArray.forEach(v => votedSet.add(v.toLowerCase()));
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(Array.from(votedSet)));
+    } catch {}
+  }
+
+  // Controlla se un voter ha gia' votato
+  function isVoterAlreadyVoted(voter) {
+    if (!voter) return false;
+    return votedSet.has(voter.toLowerCase());
+  }
+
+  /* =========================================================
+     BUILD UI
+     ========================================================= */
+  function buildUI() {
+    const sel = document.getElementById('voterSelect');
+    people.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p;
+      opt.textContent = p;
+      sel.appendChild(opt);
+    });
+
+    const qdiv = document.getElementById('questions');
+    qdiv.innerHTML = '';
+
+    questions.forEach((q, qi) => {
+      const box = document.createElement('div');
+      box.className = 'question';
+      box.dataset.qindex = qi;
+
+      const h = document.createElement('div');
+      h.className = 'qtitle';
+      h.textContent = (qi + 1) + '. ' + q;
+      box.appendChild(h);
+
+      const opts = document.createElement('div');
+      opts.className = 'options';
+
+      people.forEach(p => {
+        const id = `q${qi}_` + p.replace(/\s+/g, '_');
+        const label = document.createElement('label');
+        label.className = 'option';
+        label.setAttribute('for', id);
+
+        const r = document.createElement('input');
+        r.type = 'radio';
+        r.name = 'q' + qi;
+        r.value = p;
+        r.id = id;
+        r.tabIndex = -1;
+
+        const dot = document.createElement('span');
+        dot.className = 'dot';
+        dot.style.background = colorMap[p];
+
+        const txt = document.createElement('span');
+        txt.className = 'opt-text';
+        txt.textContent = p;
+
+        label.appendChild(r);
+        label.appendChild(dot);
+        label.appendChild(txt);
+        opts.appendChild(label);
+      });
+
+      box.appendChild(opts);
+      qdiv.appendChild(box);
+    });
+  }
+
+  /* =========================================================
+     AGGIORNA UI IN BASE AL VOTER SELEZIONATO
+     ========================================================= */
+  function updateVoterUI() {
+    const voter = document.getElementById('voterSelect').value;
+    const alreadyVoted = isVoterAlreadyVoted(voter);
+
+    const banner = document.getElementById('alreadyVotedBanner');
+    const msg    = document.getElementById('alreadyVotedMsg');
+    const submit = document.getElementById('submitBtn');
+    const qdiv   = document.getElementById('questions');
+
+    if (voter && alreadyVoted) {
+      // Mostra banner, disabilita form
+      banner.classList.remove('hidden');
+      msg.textContent = `${voter} ha già votato. Grazie! 🎉`;
+      submit.disabled = true;
+      qdiv.style.opacity = '0.35';
+      qdiv.style.pointerEvents = 'none';
+    } else {
+      banner.classList.add('hidden');
+      submit.disabled = false;
+      qdiv.style.opacity = '';
+      qdiv.style.pointerEvents = '';
+    }
+
+    // Disabilita auto-voto
+    questions.forEach((q, qi) => {
+      people.forEach(p => {
+        const id = `q${qi}_` + p.replace(/\s+/g, '_');
+        const inputEl = document.getElementById(id);
+        if (!inputEl) return;
+        inputEl.disabled = (p === voter);
+        const labelEl = inputEl.closest('label');
+        if (labelEl) labelEl.classList.toggle('disabled', p === voter);
+      });
+    });
+  }
+
+  // Promessa che si risolve quando il primo fetch dal server è completato.
+  // Finché non è pronta, il cambio nome nel dropdown aspetta prima di aggiornare l'UI.
+  let _initialFetchResolve;
+  const initialFetchDone = new Promise(resolve => { _initialFetchResolve = resolve; });
+
+  document.getElementById('voterSelect').addEventListener('change', async () => {
+    await initialFetchDone; // aspetta che votedSet sia popolato dal server
+    updateVoterUI();
   });
 
-  return Array.from(voted);
-}
+  /* =========================================================
+     SUBMIT VOTO
+     ========================================================= */
+  async function submitVote() {
+    const voter = document.getElementById('voterSelect').value;
+    if (!voter) { alert('Seleziona il tuo nome'); return; }
 
-
-/**
- * ============================
- *  FUNZIONI PRINCIPALI (API)
- * ============================
- */
-
-/**
- * Gestisce le richieste POST (ricezione voto).
- */
-function doPost(e) {
-  try {
-    if (!e || !e.postData || !e.postData.contents) {
-      return jsonResponse({ ok: false, error: 'Nessun payload ricevuto' });
+    // Doppio controllo lato client
+    if (isVoterAlreadyVoted(voter)) {
+      alert(`${voter} ha già votato!`);
+      updateVoterUI();
+      return;
     }
 
-    const payload = JSON.parse(e.postData.contents);
-    const voter = (payload.voter || '').toString().trim();
-    const votes = payload.votes || {};
+    const votes = {};
+    const missing = [];
 
-    // Autorizzazione voter
-    if (!voter || !AUTHORIZED.some(n => n.toLowerCase() === voter.toLowerCase())) {
-      return jsonResponse({ ok: false, error: 'Voter non autorizzato' });
+    for (let qi = 0; qi < questions.length; qi++) {
+      const radios = document.getElementsByName('q' + qi);
+      let chosen = null;
+      for (const r of radios) if (r.checked) chosen = r.value;
+      if (!chosen) missing.push({ index: qi, title: questions[qi] });
+      votes['q' + qi] = chosen || null;
     }
 
-    // Controllo: ha già votato?
-    const alreadyVoted = getVotersWhoVoted();
-    if (alreadyVoted.some(v => v.toLowerCase() === voter.toLowerCase())) {
-      return jsonResponse({ ok: false, error: 'Hai già votato' });
+    document.querySelectorAll('.question').forEach((el, idx) => {
+      el.classList.toggle('missing', missing.some(m => m.index === idx));
+    });
+
+    if (missing.length) {
+      const lines = missing.map(m => `${m.index + 1}. ${m.title}`);
+      alert('Ti sei dimenticato di rispondere alle seguenti domande:\n\n' + lines.join('\n'));
+      const firstMissing = document.querySelector('.question.missing');
+      if (firstMissing) firstMissing.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
     }
 
-    // Controllo auto-voto
-    for (const k in votes) {
-      const val = (votes[k] || '').toString().trim();
-      if (!val) continue;
-      if (val.toLowerCase() === voter.toLowerCase()) {
-        return jsonResponse({ ok: false, error: 'Auto-voto non consentito' });
+    // Anti auto-voto client
+    for (let qi = 0; qi < questions.length; qi++) {
+      const chosen = votes['q' + qi];
+      if (chosen && chosen.toLowerCase().trim() === voter.toLowerCase().trim()) {
+        alert('Non puoi votare te stesso. Controlla le risposte.');
+        return;
       }
     }
 
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let sheet = ss.getSheetByName(SHEET_NAME);
-    if (!sheet) sheet = ss.insertSheet(SHEET_NAME);
+    try {
+      const res = await fetch(WEB_APP_URL, {
+        method: 'POST',
+        body: JSON.stringify({ voter, votes })
+      });
+      const j = await res.json();
 
-    // Header dinamico
-    const header = ['timestamp', 'voter'].concat(Object.keys(votes));
-    if (sheet.getLastRow() === 0) sheet.appendRow(header);
+      if (j.ok) {
+        // Segna subito in memoria e localStorage
+        markVoted(voter);
 
-    // Riga dati
-    const row = [new Date(), voter];
-    for (const k of Object.keys(votes)) row.push(votes[k] || '');
-    sheet.appendRow(row);
+        alert('Voto registrato! Grazie 🎉');
+        clearForm();
+        updateVoterUI();
+        await fetchResults(true);
 
-    return jsonResponse({ ok: true });
-
-  } catch (err) {
-    return jsonResponse({ ok: false, error: err.message });
-  }
-}
-
-/**
- * Gestisce le richieste GET.
- */
-function doGet(e) {
-  try {
-    const action = (e && e.parameter && e.parameter.action) ? e.parameter.action : null;
-
-    if (action === 'results') {
-      return jsonResponse(getAggregatedResults());
+      } else {
+        // Se il server dice "hai già votato" aggiorniamo anche il localStorage
+        if (j.error && j.error.toLowerCase().includes('già votato')) {
+          markVoted(voter);
+          updateVoterUI();
+        }
+        alert('Errore: ' + (j.error || 'risposta non valida'));
+      }
+    } catch (e) {
+      alert('Errore di rete: impossibile inviare il voto.');
+      console.error(e);
     }
-
-    // Restituisce anche la lista di chi ha già votato
-    if (action === 'voted') {
-      return jsonResponse({ ok: true, voted: getVotersWhoVoted() });
-    }
-
-    return jsonResponse({ ok: true, message: 'Web App attivo' });
-
-  } catch (err) {
-    return jsonResponse({ ok: false, error: err.message });
-  }
-}
-
-
-/**
- * ============================
- *  RESET VOTI
- *  → Esegui manualmente da Apps Script
- * ============================
- */
-
-/**
- * Cancella tutti i voti dal foglio (lascia l'header intatto).
- * Per eseguire: apri Apps Script → seleziona questa funzione → clicca ▶ Esegui
- */
-function resetVoti() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAME);
-
-  if (!sheet) {
-    Logger.log('Foglio "' + SHEET_NAME + '" non trovato. Niente da resettare.');
-    return;
   }
 
-  const lastRow = sheet.getLastRow();
-  if (lastRow <= 1) {
-    Logger.log('Nessun voto da cancellare.');
-    return;
-  }
+  document.getElementById('submitBtn').addEventListener('click', submitVote);
 
-  // Cancella tutte le righe dati (dalla 2 in poi), mantiene l'header
-  sheet.deleteRows(2, lastRow - 1);
-  Logger.log('Reset completato: cancellate ' + (lastRow - 1) + ' righe.');
-}
+  /* =========================================================
+     RESET FORM (solo UI locale, non i voti sul server)
+     ========================================================= */
+  function clearForm() {
+    document.getElementById('voterSelect').value = '';
 
-
-/**
- * ============================
- *  LOGICA DI CALCOLO RISULTATI
- * ============================
- */
-
-function getAggregatedResults() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAME);
-
-  const emptyResult = (count) => {
-    const res = {};
-    for (let i = 0; i < count; i++) {
-      res['q' + i] = AUTHORIZED.map(n => ({ name: n, count: 0, percent: 0 }));
-    }
-    return res;
-  };
-
-  if (!sheet) return emptyResult(DEFAULT_Q_COUNT);
-
-  const data = sheet.getDataRange().getValues();
-  if (!data || data.length === 0) return emptyResult(DEFAULT_Q_COUNT);
-  if (data.length <= 1) {
-    const qCount = Math.max((data[0] || []).length - 2, 0);
-    return emptyResult(qCount || DEFAULT_Q_COUNT);
-  }
-
-  const header = data[0];
-  const rows = data.slice(1);
-  const qCount = Math.max(header.length - 2, 0);
-  const results = {};
-
-  for (let qi = 0; qi < qCount; qi++) {
-    const counts = {};
-    AUTHORIZED.forEach(n => counts[n] = 0);
-
-    rows.forEach(r => {
-      const raw = r[2 + qi];
-      const val = (raw === undefined || raw === null) ? '' : raw.toString().trim();
-      if (!val) return;
-      const matched = AUTHORIZED.find(a => a.toLowerCase() === val.toLowerCase());
-      if (matched) counts[matched] = (counts[matched] || 0) + 1;
+    document.querySelectorAll('input[type=radio]').forEach(i => {
+      i.checked = false;
+      const lab = i.closest('.option');
+      if (lab) lab.classList.remove('selected', 'disabled');
     });
 
-    const totalCount = Object.values(counts).reduce((a, b) => a + b, 0);
-    const arr = AUTHORIZED.map(name => ({
-      name,
-      count: counts[name] || 0,
-      percent: totalCount > 0 ? (counts[name] / totalCount * 100) : 0
-    }));
-
-    arr.sort((a, b) => b.count - a.count);
-    results['q' + qi] = arr;
+    document.querySelectorAll('.question').forEach(q => q.classList.remove('missing'));
+    document.getElementById('alreadyVotedBanner').classList.add('hidden');
+    document.getElementById('submitBtn').disabled = false;
+    const qdiv = document.getElementById('questions');
+    qdiv.style.opacity = '';
+    qdiv.style.pointerEvents = '';
   }
 
-  return results;
-}
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    clearForm();
+    fetchResults(true);
+  });
+
+  /* =========================================================
+     STATO VOTANTI (sidebar)
+     ========================================================= */
+  function renderVotersStatus(votedList) {
+    const div = document.getElementById('votersStatus');
+    if (!div) return;
+
+    const votedSet = new Set(votedList.map(v => v.toLowerCase()));
+    const total = people.length;
+    const count = people.filter(p => votedSet.has(p.toLowerCase())).length;
+
+    let html = `<strong>${count} / ${total}</strong> hanno votato<br><br>`;
+    people.forEach(p => {
+      const hasVoted = votedSet.has(p.toLowerCase());
+      html += `<span class="voter-pill ${hasVoted ? 'voted' : 'pending'}">${hasVoted ? '✓ ' : ''}${p}</span>`;
+    });
+
+    div.innerHTML = html;
+  }
+
+  /* =========================================================
+     RENDER RISULTATI E GRAFICI
+     ========================================================= */
+  function renderResults(data) {
+    const resultsDiv = document.getElementById('results');
+    if (!resultsDiv) return;
+
+    Object.keys(charts).forEach(k => {
+      try { charts[k].destroy(); } catch(e) {}
+      delete charts[k];
+    });
+
+    resultsDiv.innerHTML = '';
+
+    Object.keys(data).forEach(qk => {
+      const qi = parseInt(qk.replace('q', ''), 10);
+      if (isNaN(qi) || qi >= questions.length) return;
+
+      const container = document.createElement('div');
+      container.className = 'result-card';
+
+      const title = document.createElement('h4');
+      title.textContent = (qi + 1) + '. ' + (questions[qi] || ('Domanda ' + (qi + 1)));
+      container.appendChild(title);
+
+      const canvasWrap = document.createElement('div');
+      canvasWrap.style.cssText = 'width:100%;min-height:180px;display:flex;align-items:center;justify-content:center;';
+
+      const canvas = document.createElement('canvas');
+      canvas.id = 'chart_' + qk;
+      canvas.style.cssText = 'width:100%;height:180px;';
+      canvasWrap.appendChild(canvas);
+      container.appendChild(canvasWrap);
+
+      const legend = document.createElement('div');
+      legend.className = 'legend';
+
+      const items = (data[qk] || []).map(it => ({
+        name: it.name,
+        count: Number(it.count) || 0,
+        percent: Number(it.percent) || 0
+      }));
+
+      items.forEach(item => {
+        const li = document.createElement('div');
+        li.className = 'legend-item';
+        const dot = document.createElement('span');
+        dot.className = 'dot';
+        dot.style.background = colorMap[item.name] || '#888';
+        const txt = document.createElement('span');
+        txt.textContent = `${item.name} — ${item.percent.toFixed(1)}% (${item.count})`;
+        li.appendChild(dot);
+        li.appendChild(txt);
+        legend.appendChild(li);
+      });
+
+      container.appendChild(legend);
+      resultsDiv.appendChild(container);
+
+      try {
+        const ctx = canvas.getContext('2d');
+        charts[qk] = new Chart(ctx, {
+          type: 'pie',
+          data: {
+            labels: items.map(d => d.name),
+            datasets: [{ data: items.map(d => d.count), backgroundColor: items.map(d => colorMap[d.name] || '#666') }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    const idx = context.dataIndex;
+                    return `${items[idx].name}: ${items[idx].count} voti — ${items[idx].percent.toFixed(1)}%`;
+                  }
+                }
+              },
+              legend: { display: false }
+            }
+          }
+        });
+        setTimeout(() => { try { charts[qk].resize(); } catch(e) {} }, 60);
+      } catch(err) {
+        console.error('Chart error for', qk, err);
+      }
+    });
+  }
+
+  /* =========================================================
+     FETCH DAL SERVER (risultati + lista votanti)
+     ========================================================= */
+  let _fetchInProgress = false;
+  let _initialFetchDone = false;
+
+  async function fetchResults(forceRefresh = false) {
+    if (_fetchInProgress && !forceRefresh) return;
+    _fetchInProgress = true;
+    try {
+      const url = WEB_APP_URL + '?action=all&_=' + Date.now();
+      const res  = await fetch(url, { cache: 'no-store' });
+      const data = await res.json();
+
+      if (data.ok && Array.isArray(data.voted)) {
+        syncVoted(data.voted);           // aggiorna votedSet con dati reali dal server
+        if (!_initialFetchDone) {
+          _initialFetchDone = true;
+          _initialFetchResolve();        // sblocca il listener sul dropdown
+        }
+        renderVotersStatus(data.voted);
+        updateVoterUI();                 // aggiorna banner/form con dati freschi
+      }
+
+      if (data.results) {
+        renderResults(data.results);
+      }
+
+    } catch(e) {
+      console.error('fetchResults error:', e);
+    } finally {
+      _fetchInProgress = false;
+    }
+  }
+
+  /* =========================================================
+     CLICK HANDLER (capture phase)
+     ========================================================= */
+  document.addEventListener('click', function(e) {
+    const el = document.elementFromPoint(e.clientX, e.clientY) || e.target;
+    const label = el.closest && el.closest('.option');
+    if (!label) return;
+    const input = label.querySelector('input[type=radio]');
+    if (!input || input.disabled) return;
+
+    input.checked = true;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    label.classList.add('selected');
+
+    const group = input.name;
+    document.querySelectorAll('input[name="' + group + '"]').forEach(i => {
+      const lab = i.closest('.option');
+      if (lab && i !== input) lab.classList.toggle('selected', i.checked);
+    });
+  }, true);
+
+  /* =========================================================
+     INIZIALIZZAZIONE
+     ========================================================= */
+  (function init() {
+    buildUI();
+    updateVoterUI();
+    fetchResults();
+    setInterval(fetchResults, REFRESH_INTERVAL_MS);
+  })();
+  </script>
+</body>
+</html>
