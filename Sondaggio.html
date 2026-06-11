@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sondaggio Gruppo</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <main class="container">
+    <header class="hero">
+      <h1>Sondaggio del Gruppo</h1>
+      <p class="subtitle">Rispondi alle domande scegliendo una persona per ogni voce. Non puoi votare te stesso.</p>
+    </header>
+
+    <section class="form-area">
+      <label class="field">
+        <span class="label">Seleziona il tuo nome (obbligatorio)</span>
+        <select id="voterSelect" class="select" aria-label="Seleziona il tuo nome">
+          <option value="" disabled selected>-- scegli il tuo nome --</option>
+        </select>
+      </label>
+
+      <div id="questions" class="questions" aria-live="polite"></div>
+
+      <div class="actions">
+        <button id="submitBtn" class="btn primary">Invia voto</button>
+        <button id="resetBtn" class="btn ghost">Reset locale</button>
+      </div>
+    </section>
+
+    <section class="results-area">
+      <h2>Risultati (aggiornati)</h2>
+      <div id="results" class="results-grid" aria-live="polite"></div>
+    </section>
+  </main>
+
+<script>
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyizCFVugYnqH_dbEPytdHBXUbrXJ8rWRo7z2rYXz5GVRaqwNoesVSCYidTfnZEvNX2/exec';
+const REFRESH_INTERVAL_MS = 10000;
+
+const people = [
+  "Gaetano Orefice","Daniela Parascandolo","Aurora Orefice","Enrico Scolastico",
+  "Gianpiero Fasulo","Federica Devastato","Eleonora Galdi","Fabio Vassallo",
+  "Fabio Sivero","Luigi De Simone","Chiara Vassallo"
+];
+
+const questions = [
+  "Chi fa la miglior sciarpata?",
+  "Chi ha i gusti migliori col cibo?",
+  "Chi ha i gusti peggiori col cibo?",
+  "Chi è il più austico / riservato?",
+  "Chi è il miglior guidatore?",
+  "Chi è il peggior guidatore?",
+  "Chi è più schietto?",
+  "Chi è più ingenuo o poco sveglio?",
+  "Chi è più partecipe/componente del gruppo?",
+  "Chi mangia di più?",
+  "Chi mangia di meno?",
+  "Chi è più affidabile?",
+  "Chi è il meno affidabile?",
+  "A chi lascereste i vostri figli?",
+  "A chi non lascereste i vostri figli?",
+  "Chi chiamereste in una situazione di necessità che sicuramente risponderebbe?",
+  "Chi non provereste nemmeno a chiamare in una situazione di necessità?",
+  "A chi affidereste la vostra macchina?",
+  "Di chi vi fidate di più / chi vi ispira più fiducia?",
+  "Con chi vi sentite più sintonia (escludere partner e fratelli/sorelle)?",
+  "Con chi vorreste stringere di più il vostro rapporto di amicizia?",
+  "Con chi passereste le serate più pazze/esotiche?",
+  "Con chi fareste un viaggio?",
+  "Chi secondo voi ha il cognome più divertente?",
+  "Chi secondo voi ha il nome più bello?",
+  "Chi vincerebbe a una gara di canto?",
+  "Chi vincerebbe a una gara di Karaoke?",
+  "Chi vincerebbe a una gara di stand-up comedy?"
+];
+
+const palette = ['#FF6B6B','#4ECDC4','#FFD93D','#5568FE','#FF8C42','#9B5DE5','#00C2A8','#FF6FD8','#8AC926','#00A6FB','#F72585'];
+const colorMap = {};
+people.forEach((p,i)=> colorMap[p]=palette[i%palette.length]);
+
+function buildUI(){
+  const voter = document.getElementById('voterSelect');
+  people.forEach(p=> {
+    const opt = document.createElement('option'); opt.value=p; opt.textContent=p; voter.appendChild(opt);
+  });
+
+  const qdiv = document.getElementById('questions');
+  qdiv.innerHTML = '';
+  questions.forEach((q,qi)=>{
+    const box = document.createElement('div'); box.className='question card';
+    const h = document.createElement('div'); h.className='qtitle'; h.textContent = (qi+1)+'. '+q; box.appendChild(h);
+    const options = document.createElement('div'); options.className='options';
+    people.forEach(p=>{
+      const id = `q${qi}_` + p.replace(/\s+/g,'_');
+      const label = document.createElement('label'); label.className='option';
+      const r = document.createElement('input'); r.type='radio'; r.name='q'+qi; r.value=p; r.id=id;
+      const dot = document.createElement('span'); dot.className='dot'; dot.style.background=colorMap[p];
+      const txt = document.createElement('span'); txt.className='opt-text'; txt.textContent = p;
+      label.appendChild(r); label.appendChild(dot); label.appendChild(txt);
+      // fix: forza selezione al click
+      label.addEventListener('click', ()=>{
+        if(!r.disabled){ r.checked = true; r.dispatchEvent(new Event('change',{bubbles:true})); }
+      });
+      options.appendChild(label);
+    });
+    box.appendChild(options);
+    qdiv.appendChild(box);
+  });
+}
+buildUI();
+
+document.getElementById('voterSelect').addEventListener('change', ()=>{
+  const voter = document.getElementById('voterSelect').value;
+  questions.forEach((q,qi)=>{
+    people.forEach(p=>{
+      const id = `q${qi}_` + p.replace(/\s+/g,'_');
+      const inputEl = document.getElementById(id);
+      if (!inputEl) return;
+      inputEl.disabled = (p === voter);
+      const labelEl = inputEl.closest('label');
+      if (labelEl) {
+        if (p === voter) labelEl.classList.add('disabled');
+        else labelEl.classList.remove('disabled');
+      }
+    });
+  });
+});
+
+document.getElementById('submitBtn').addEventListener('click', async ()=>{
+  const voter = document.getElementById('voterSelect').value;
+  if(!voter){ alert('Seleziona il tuo nome'); return; }
+  const votes = {};
+  for(let qi=0; qi<questions.length; qi++){
+    const radios = document.getElementsByName('q'+qi);
+    let chosen = null;
+    for(const r of radios) if(r.checked) chosen = r.value;
+    if(qi !== questions.length-1 && !chosen){ alert('Rispondi a tutte le domande obbligatorie'); return; }
+    votes['q'+qi] = chosen || null;
+  }
+  for (let qi=0; qi<questions.length; qi++){
+    const chosen = votes['q'+qi];
+    if (chosen && chosen.toLowerCase().trim() === voter.toLowerCase().trim()) {
+      alert('Non puoi votare te stesso. Controlla le risposte.');
+      return;
+    }
+  }
+  try {
+    const res = await fetch(WEB_APP_URL, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ voter, votes })
+    });
+    const j = await res.json();
+    if(j.ok){ alert('Voto registrato'); clearSelections(); fetchResults(); }
+    else alert('Errore: '+(j.error||''));
+  } catch(e){
+    alert('Errore di rete: impossibile inviare il voto.');
+    console.error(e);
+  }
+});
+
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  if(confirm('Vuoi resettare le selezioni locali?')) clearSelections();
+});
+function clearSelections(){
+  document.getElementById('voterSelect').value = '';
+  document.querySelectorAll('input[type=radio]').forEach(i=> i.checked=false);
+  document.getElementById('voterSelect').dispatchEvent(new Event('change'));
+}
+
+let charts = {};
+async function fetchResults(){
+  try {
+    const r = await fetch(WEB_APP_URL + '?action=results');
+    const data = await r.json();
+    renderResults(data);
+  } catch(e){ console.error(e); }
+}
+
+function renderResults(data){
+  const resultsDiv = document.getElementById('results');
+  resultsDiv.innerHTML = '';
+  Object.keys(data).forEach(qk=>{
+    const qi = parseInt(qk.replace('q',''));
+    const container = document.createElement('div'); container.className='result-card card';
+    const title = document.createElement('h4'); title.textContent
